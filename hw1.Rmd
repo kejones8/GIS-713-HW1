@@ -1,0 +1,112 @@
+---
+title: "KJ GIS 713 HW 1"
+date: "Due 09/05/2019"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(data.table)
+library(sp)
+NASS<-fread("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\qs.crops_20170829.txt.gz",stringsAsFactors = FALSE)
+summary(NASS)
+names(NASS)
+dim(NASS)
+#install.packages("stringr")
+library(stringr)
+
+
+
+```
+•	What US county has recorded the highest average corn yield since 1990?
+```{r}
+
+###Question 1
+
+#checking to see if corn is in "COMMODITY_DESC", it is!
+sorted_comm_desc<-unique(NASS[,sort(COMMODITY_DESC)])
+
+#not sure which field indicates yield amount...but "VALUE" seems like the best candidate
+#when imported, value is a character - need to change it to numeric
+value_num <- gsub(",","",NASS$VALUE)
+#write to numeric vector, to then add as a column
+numbers<-as.numeric(value_num)
+
+#changing VALUE to column to numeric 
+NASS[, double_val := numbers] 
+#corn[, numeric_val := numbers]
+NASS[, value_tons := numbers]
+
+#get all records in NASS that have CORN (case sensitive!) for "COMMODITY_DESC"
+corn<-NASS[COMMODITY_DESC %like% "CORN"]
+
+#make sure just for counties
+corn_by_county<-corn[AGG_LEVEL_DESC %like% "COUNTY"]
+# looking for only records that indicate corn yield
+corn_yield<-corn_by_county[SHORT_DESC %like% "YIELD"]
+
+
+#how many records in corn_yield
+nrow(corn_yield)
+#how many records in corn_yield have value_tons less than 1
+nrow(corn_yield[corn_yield$value_tons<1,])
+
+###the next concern is that the units for corn are not all the same??
+#CORN & SORGHUM (56 lb/bu) 1 bushel = .0254 metric ton. 1 metric ton = 39.368 bushels.
+value_tons <- "value_tons"
+for (i in value_tons) { 
+  corn_yield[get(i)== SHORT_DESC %like% "BU", eval(i) := double_val*.0245]
+}
+
+#check corn_yield rows to see if accidentally modified
+nrow(corn_yield)
+#check less than 1 to see if a chunk of rows were modified, yes!
+nrow(corn_yield[corn_yield$value_tons<1,])
+
+#want yield by county code, broken into unique STATE_FIPS_CODE, value_tons averaged over all the years from 1990 to present records
+corn_subset<-corn_yield[YEAR>=1990,.(avg_corn=mean(value_tons)),by=.(STATE_FIPS_CODE,STATE_NAME,COUNTY_CODE,COUNTY_NAME)]
+
+#removes NA's for avg_corn so max works
+county_maxcorn<-corn_subset[corn_subset$avg_corn==max(corn_subset$avg_corn,na.rm=TRUE),]
+
+```
+
+•	What is the highest reported annual corn yield? In what county?
+```{r}
+###Question 2
+#for all entries for a given year, sum them to get one annual yield in tons
+#return the county associated with this value
+corn_county_year<-corn_yield[,.(annual_yield=sum(value_tons)),by=.(YEAR,STATE_FIPS_CODE,COUNTY_CODE,COUNTY_NAME)][order(-annual_yield)]
+
+```
+
+•	What state has the most acres of soy in 2014?
+
+```{r}
+by_state<-NASS[AGG_LEVEL_DESC %like% "STATE"]
+#check to see if "soy" is in the commodity description, yes!
+soy<-by_state[COMMODITY_DESC %like% "SOY"]
+#
+soy_short_desc<-soy[SHORT_DESC %like% "SOY"]
+soy_short_desc_acres<-soy_short_desc[SHORT_DESC %like% "ACRES"]
+soy_short_desc_planted<-soy_short_desc_acres[SHORT_DESC %like% "PLANTED"]
+
+soy_state_acres_2014<-soy_short_desc_planted[YEAR==2014,.(state_total=sum(value_tons)),by=.(YEAR,STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
+
+```
+•	What state has the highest average land fraction used for soy production since 1990? 
+
+```{r}
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
