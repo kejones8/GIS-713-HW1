@@ -99,7 +99,7 @@ soy_short_desc<-soy[SHORT_DESC %like% "SOY"]
 soy_short_desc_acres<-soy_short_desc[SHORT_DESC %like% "ACRES"]
 soy_short_desc_planted<-soy_short_desc_acres[SHORT_DESC %like% "PLANTED"]
 
-soy_state_acres_2014<-soy_short_desc_planted[YEAR==2014,.(state_total=sum(value_tons)),by=.(YEAR,STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
+soy_state_acres_2014<-soy_short_desc_planted[YEAR==2014,.(state_total=sum(double_val)),by=.(YEAR,STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
 
 soy_state_acres_2014
 ```
@@ -108,21 +108,47 @@ soy_state_acres_2014
 ```{r}
 library(sp)
 library(rgdal)
+#install.packages("rgeos")
+library(rgeos)
 
 #read in states/counties shapefile
-states <- readOGR("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\GIS-713-HW1\\cb_2015_us_county_20m\\cb_2015_us_county_20m.shp", "cb_2015_us_county_20m", stringsAsFactors=F)
+counties <- readOGR("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\GIS-713-HW1\\cb_2015_us_county_20m\\cb_2015_us_county_20m.shp", "cb_2015_us_county_20m", stringsAsFactors=F)
 
 #check class of states
-class(states)
-summary(states)
+class(counties)
+#does ALAND seem like it's in meters? 
+summary(counties)
+
 #summary()indicates CRS is lat, long. don't like.
 #don't trust that the "ALAND" field is calculated in meters
 #will set a meter projection for entire US shapefile
-lamb_conf_conic<-"+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
-#set CRS,still need to reproject
-proj4string(states) <- CRS(lamb_conf_conic)
-#transform/reproject shapefile
-states_lcc <- spTransform(states, CRS(lamb_conf_conic))
+# lamb_conf_conic<-"+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+# #set CRS,still need to reproject
+# proj4string(counties) <- CRS(lamb_conf_conic)
+# 
+# #transform/reproject shapefile
+# counties_lcc <- spTransform(counties, CRS(lamb_conf_conic))
+# 
+# class(counties_lcc)
+# 
+# counties_lcc@Polygons
+# 
+# #now that data is projected, lets create a new field with land area we're sure is in square meters
+# counties_lcc_area <- rgeos::gArea(counties_lcc@polygons) 
+
+#state.area is built in dataset in sq. miles,alphabetical order
+class(state.area)
+#convert state area to acres
+state_acres<-state.area*640
+
+#assign names as unique identifiers to match with the NASS dataset
+NASS_states<-sort(unique(NASS$STATE_NAME))
+#need to remove "","other States", "US TOTAL"
+states50<-NASS_states[-c(1,39,46)]
+states50_acres<-cbind(states50,state_acres)
+
+soy_state_acres<-soy_short_desc_planted[YEAR>=1990,.(avg_soy_planted=mean(double_val)),by=.(STATE_NAME,STATE_FIPS_CODE)][order(-avg_soy_planted)]
+
 
 ```
 
