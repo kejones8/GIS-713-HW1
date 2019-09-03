@@ -75,6 +75,7 @@ corn_subset<-corn_yield[YEAR>=1990,.(avg_corn=mean(value_tons)),by=.(STATE_FIPS_
 county_maxcorn<-corn_subset[corn_subset$avg_corn==max(corn_subset$avg_corn,na.rm=TRUE),]
 
 county_maxcorn
+
 ```
 
 •	What is the highest reported annual corn yield? In what county?
@@ -144,12 +145,18 @@ state_acres<-state.area*640
 #assign names as unique identifiers to match with the NASS dataset
 NASS_states<-sort(unique(NASS$STATE_NAME))
 #need to remove "","other States", "US TOTAL"
-states50<-NASS_states[-c(1,39,46)]
-states50_acres<-cbind(states50,state_acres)
+STATE_NAME<-NASS_states[-c(1,39,46)]
+#create new data table linking state names and acres
+states50_acres<-data.table(cbind(STATE_NAME,state_acres))
 
-soy_state_acres<-soy_short_desc_planted[YEAR>=1990,.(avg_soy_planted=mean(double_val)),by=.(STATE_NAME,STATE_FIPS_CODE)][order(-avg_soy_planted)]
+soy_short_desc_planted[states50_acres, state_acres := state_acres, on = .(STATE_NAME)]
 
 
+soy_state_landfrac<-soy_short_desc_planted[,.(soy_land_frac=double_val/as.numeric(state_acres)),by=.(YEAR, STATE_NAME,STATE_FIPS_CODE)]
+
+avg_soy_landfrac<-soy_state_landfrac[YEAR>=1990,.(avg_soy_landfrac=mean(soy_land_frac)),by=.(STATE_NAME)][order(-avg_soy_landfrac)]
+
+avg_soy_landfrac
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
