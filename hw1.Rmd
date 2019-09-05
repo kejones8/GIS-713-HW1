@@ -2,114 +2,84 @@
 title: "KJ GIS 713 HW 1"
 date: "Due 09/05/2019"
 output:
-  html_notebook: default
   pdf_document: default
+  html_notebook: default
 ---
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
 
 Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
-```{r}
+```{r, include=FALSE}
+
+options(tinytex.verbose = TRUE)
 library(data.table)
 library(sp)
+library(stringr)
+
 NASS<-fread("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\qs.crops_20170829.txt.gz",stringsAsFactors = FALSE)
 summary(NASS)
 names(NASS)
 dim(NASS)
-#install.packages("stringr")
-library(stringr)
-
-
 
 ```
+
 •	What US county has recorded the highest average corn yield since 1990?
-```{r}
 
-###Question 1
+```{r County with highest average corn yield}
 
-#checking to see if corn is in "COMMODITY_DESC", it is!
-sorted_comm_desc<-unique(NASS[,sort(COMMODITY_DESC)])
-
-#not sure which field indicates yield amount...but "VALUE" seems like the best candidate
 #when imported, value is a character - need to change it to numeric
 value_num <- gsub(",","",NASS$VALUE)
+
 #write to numeric vector, to then add as a column
 numbers<-as.numeric(value_num)
 
-#changing VALUE to column to numeric 
+#add double_val column, which is VALUE as a number
 NASS[, double_val := numbers] 
-#corn[, numeric_val := numbers]
-NASS[, value_tons := numbers]
 
-#get all records in NASS that have CORN (case sensitive!) for "COMMODITY_DESC"
-corn<-NASS[COMMODITY_DESC %like% "CORN"]
+#get all records in NASS that have CORN (case sensitive!) for "COMMODITY_DESC" & subsequent columns specifics
+corn<-NASS[YEAR>=1990 & COMMODITY_DESC %like% "CORN" & AGG_LEVEL_DESC %like% "COUNTY" & SHORT_DESC %like% "GRAIN - YIELD" & SHORT_DESC %like% "BU / ACRE" ,.SD]
 
-#make sure just for counties
-corn_by_county<-corn[AGG_LEVEL_DESC %like% "COUNTY"]
-# looking for only records that indicate corn yield
-corn_yield<-corn_by_county[SHORT_DESC %like% "YIELD"]
+#want yield (VALUE) by county code, broken into unique STATE_FIPS_CODE with VALUE averaged over all the years from 1990 on
+corn_avg_yield_county<-corn[,.(avg_corn=mean(double_val)),by=.(STATE_NAME,COUNTY_NAME,STATE_FIPS_CODE,COUNTY_CODE)][order(-avg_corn)]
 
-
-#how many records in corn_yield
-nrow(corn_yield)
-#how many records in corn_yield have value_tons less than 1
-nrow(corn_yield[corn_yield$value_tons<1,])
-
-###the next concern is that the units for corn are not all the same??
-#CORN & SORGHUM (56 lb/bu) 1 bushel = .0254 metric ton. 1 metric ton = 39.368 bushels.
-value_tons <- "value_tons"
-for (i in value_tons) { 
-  corn_yield[get(i)== SHORT_DESC %like% "BU", eval(i) := double_val*.0245]
-}
-
-#check corn_yield rows to see if accidentally modified
-nrow(corn_yield)
-#check less than 1 to see if a chunk of rows were modified, yes!
-nrow(corn_yield[corn_yield$value_tons<1,])
-
-#want yield by county code, broken into unique STATE_FIPS_CODE, value_tons averaged over all the years from 1990 to present records
-corn_subset<-corn_yield[YEAR>=1990,.(avg_corn=mean(value_tons)),by=.(STATE_FIPS_CODE,STATE_NAME,COUNTY_CODE,COUNTY_NAME)]
-
-#removes NA's for avg_corn so max works
-county_maxcorn<-corn_subset[corn_subset$avg_corn==max(corn_subset$avg_corn,na.rm=TRUE),]
-
-county_maxcorn
-
+corn_avg_yield_county
 ```
 
 •	What is the highest reported annual corn yield? In what county?
-```{r}
-###Question 2
-#for all entries for a given year, sum them to get one annual yield in tons
-#return the county associated with this value
-corn_county_year<-corn_yield[,.(annual_yield=sum(value_tons)),by=.(YEAR,STATE_FIPS_CODE,COUNTY_CODE,COUNTY_NAME)][order(-annual_yield)]
 
-corn_county_year
+```{r County with the highest reported annual corn yield}
+
+#for all entries for a given year, sum them to get one annual yield
+#return the county associated with this value
+corn_maxavg_year_county<-corn[COUNTY_CODE!=998,.(annual_yield=sum(double_val)),by=.(YEAR,STATE_NAME,STATE_FIPS_CODE,COUNTY_CODE,COUNTY_NAME)][order(-annual_yield)]
+
+corn_maxavg_year_county
 
 ```
 
 •	What state has the most acres of soy in 2014?
 
-```{r}
-by_state<-NASS[AGG_LEVEL_DESC %like% "STATE"]
-#check to see if "soy" is in the commodity description, yes!
-soy<-by_state[COMMODITY_DESC %like% "SOY"]
-#
-soy_short_desc<-soy[SHORT_DESC %like% "SOY"]
-soy_short_desc_acres<-soy_short_desc[SHORT_DESC %like% "ACRES"]
-soy_short_desc_planted<-soy_short_desc_acres[SHORT_DESC %like% "PLANTED"]
+```{r State with the most acres of soy in 2014}
 
-soy_state_acres_2014<-soy_short_desc_planted[YEAR==2014,.(state_total=sum(double_val)),by=.(YEAR,STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
+#look for soy records by state, acres planted, and with a year reference, not March est.
+soy_acres_planted_allyears<-NASS[YEAR>=1990 & COMMODITY_DESC %like% "SOY" & AGG_LEVEL_DESC %like% "STATE" & SHORT_DESC == "SOYBEANS - ACRES PLANTED" & REFERENCE_PERIOD_DESC=="YEAR",.SD]
 
-soy_state_acres_2014
+#below helps us to check that all recrods appear to indicate acres planted, with no unit conversions or deletions necessary
+unique(soy_acres_planted_allyears$SHORT_DESC)
+
+#for the year 2014, use double_val (non-modified VALUE field) to sum soy acres planted by STATE
+state_soy_2014<-soy_acres_planted_allyears[YEAR==2014,.(state_total=sum(double_val)),by=.(STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
+
+state_soy_2014
+
 ```
-•	What state has the highest average land fraction used for soy production since 1990? 
 
-```{r}
+•What state has the highest average land fraction used for soy production since 1990? 
+
+```{r State with highest average land fraction of soy}
 library(sp)
 library(rgdal)
-#install.packages("rgeos")
 library(rgeos)
 
 #read in states/counties shapefile
@@ -122,45 +92,129 @@ summary(counties)
 
 #summary()indicates CRS is lat, long. don't like.
 #don't trust that the "ALAND" field is calculated in meters
-#will set a meter projection for entire US shapefile
-# lamb_conf_conic<-"+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
-# #set CRS,still need to reproject
-# proj4string(counties) <- CRS(lamb_conf_conic)
-# 
-# #transform/reproject shapefile
-# counties_lcc <- spTransform(counties, CRS(lamb_conf_conic))
-# 
-# class(counties_lcc)
-# 
-# counties_lcc@Polygons
-# 
-# #now that data is projected, lets create a new field with land area we're sure is in square meters
-# counties_lcc_area <- rgeos::gArea(counties_lcc@polygons) 
+#will set a meter projection for entire US shapefile, mostly for visualization purposes
+lamb_conf_conic<-"+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+#set CRS,still need to reproject
+proj4string(counties) <- CRS(lamb_conf_conic)
 
+# transform/reproject shapefile, easy for viewing all US and any other calculations
+counties_lcc <- spTransform(counties, CRS(lamb_conf_conic))
+
+#instead of using ALAND field, grab the state.area dataset in R
 #state.area is built in dataset in sq. miles,alphabetical order
 class(state.area)
-#convert state area to acres
+#convert state area from square miles to acres
 state_acres<-state.area*640
 
-#assign names as unique identifiers to match with the NASS dataset
+#assign names as unique identifiers to match with the alphabetical sorting of NASS state names
 NASS_states<-sort(unique(NASS$STATE_NAME))
-#need to remove "","other States", "US TOTAL"
+#need to remove "","OTHER STATES", "US TOTAL"
 STATE_NAME<-NASS_states[-c(1,39,46)]
 #create new data table linking state names and acres
 states50_acres<-data.table(cbind(STATE_NAME,state_acres))
 
-soy_short_desc_planted[states50_acres, state_acres := state_acres, on = .(STATE_NAME)]
+#add state names into the data.table with soy information
+soy_acres_planted_allyears[states50_acres, state_acres := state_acres, on = .(STATE_NAME)]
 
+#per year, calculate the fraction (in acres) of soy that occupies each state
+soy_state_landfrac<-soy_acres_planted_allyears[,.(soy_land_frac=double_val/as.numeric(state_acres)),by=.(YEAR, STATE_NAME,STATE_FIPS_CODE)]
 
-soy_state_landfrac<-soy_short_desc_planted[,.(soy_land_frac=double_val/as.numeric(state_acres)),by=.(YEAR, STATE_NAME,STATE_FIPS_CODE)]
-
+#average this information per state from 1990-last year
 avg_soy_landfrac<-soy_state_landfrac[YEAR>=1990,.(avg_soy_landfrac=mean(soy_land_frac)),by=.(STATE_NAME)][order(-avg_soy_landfrac)]
 
 avg_soy_landfrac
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+•	Map: county average corn yield since 1990
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+```{r Average corn yield by county since 1990}
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+library(maps)
+library(tigris)
+library(RColorBrewer)
+
+#set the colun names to be the same as the county spatial data, so column reference is the same
+setnames(corn, "STATE_FIPS_CODE", "STATEFP",skip_absent = TRUE)
+setnames(corn, "COUNTY_CODE", "COUNTYFP",skip_absent = TRUE)
+
+#turn to character, add leading 0 for state and county
+corn$STATEFP<-stringr::str_pad(corn$STATEFP, 2 , side = "left", pad = 0)
+corn$COUNTYFP<-stringr::str_pad(corn$COUNTYFP, 3, side = "left", pad = 0)
+#for simplifying join to spatial data, create unique key field by concatenating state and county FIP, as character
+corn$unique_FIP<-paste(corn$STATEFP,corn$COUNTYFP,sep="")
+
+#get the information (average corn yield per county from 1990 to present) that we want to represent spatially
+corn_tospatial<-corn[YEAR>=1990,.(avg_corn=mean(double_val)),by=.(unique_FIP,STATEFP,COUNTYFP,STATE_NAME,COUNTY_NAME)]
+
+#from maps package, get fips data for only the US states (gets rid of extraneous geographies in the loaded county shapefile)
+data(state.fips)
+
+#turn the state fips code to character and format it like the rest of the fips codes
+as.character(state.fips$fips)
+state.fips$STATEFP<-stringr::str_pad(state.fips$fips, 2 , side = "left", pad = 0)
+
+#use inner join because we want to return only rows from the counties shapefile that match the lower 48 STATEFIPS
+counties_onlylower48<-geo_join(counties_lcc, state.fips,by_sp="STATEFP",by_df="STATEFP",how="inner")
+
+#use left join, becuase we want to retain all county records, regardless of whether or not they have an average yield value associated with them
+#the counties dataset already has a concatenated fips field, "GEOID"
+counties_onlylower48_withcorn<-geo_join(counties_onlylower48,corn_tospatial,by_sp="GEOID",by_df="unique_FIP",how="left")
+
+#that's all the information we want to visualize, now plot 
+
+#set the different break categries for the data, 10 quantiles
+breaks <- quantile(counties_onlylower48_withcorn$avg_corn, seq(0, 1, by=0.1),na.rm = TRUE) 
+pal <- colorRampPalette(brewer.pal(9, "YlOrBr")) #choose yellow to browns
+cols <- pal(length(breaks - 1)) #colors used are one fewer than breaks
+counties_onlylower48_withcorn$color_index <- findInterval(counties_onlylower48_withcorn$avg_corn, breaks, all.inside=T) #assign the colors to the index of the data breaks
+
+#plot data, set the colors, size plot, and title of plot
+plot(counties_onlylower48_withcorn,col=cols[counties_onlylower48_withcorn$color_index],cex=.01, main="Mean Corn Yield per County since 1990") 
+
+#add labels and a legend
+#round the yield numbers to 2 dcimal places, use a dash to separate in the legend text
+labels <- paste(round(breaks * 100, 2)[1:(length(breaks) - 1)], round(breaks * 100, 2)[2:length(breaks)], sep="-")
+#put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend and font size
+legend("bottomleft", legend=labels, fill=cols, title="Corn Yield (in BU/acre)", cex=.5 ,pt.cex=.45)
+
+
+```
+
+• Map: County rate of corn yield increase (slope of trend since 1990) 
+
+```{r Map Percent Change in Corn Yield}
+#get annual yield by year and county/state from previously generated "corn" data.table
+corn_annualyield_year_county<-corn[,.(annual_yield=sum(double_val)),by=.(YEAR,unique_FIP,STATE_NAME,STATEFP,COUNTYFP,COUNTY_NAME)]
+
+first_year<-setDT(corn_annualyield_year_county)[, .SD[which.min(YEAR)], by=unique_FIP]
+
+last_year<-setDT(corn_annualyield_year_county)[, .SD[which.max(YEAR)], by=unique_FIP]
+
+
+setDT(first_year)[ , end_year := last_year$YEAR[match(first_year$unique_FIP , last_year$unique_FIP)] , ]
+
+setDT(first_year)[ , end_annual_yield := last_year$annual_yield[match(first_year$unique_FIP , last_year$unique_FIP)] , ]
+
+first_year[,run:=as.numeric(end_year)-as.numeric(YEAR)]
+first_year[,rise:=as.numeric(annual_yield)-as.numeric(end_annual_yield)]
+first_year[,slope:=rise/run]
+
+counties_onlylower48_withslope<-geo_join(counties_onlylower48,first_year,by_sp="GEOID",by_df="unique_FIP",how="left")
+
+library(classInt)
+cI <- classIntervals(counties_onlylower48_withslope$slope, n=9, style="jenks",na.rm=T)
+pal <- colorRampPalette(brewer.pal(9, "RdYlGn"))
+cols <- pal(length(cI$brks - 1))
+counties_onlylower48_withslope$color_index <- findCols(cI) 
+plot(counties_onlylower48_withslope, col=cols[counties_onlylower48_withslope$color_index],main="Percent Change in Corn Yield per County since 1990")
+
+
+
+#add labels and a legend
+#round the yield numbers to 2 dcimal places, use a dash to separate in the legend text
+labels <- paste(round(cI$brks, 1)[1:(length(cI$brks) - 1)], round(cI$brks, 1)[2:length(cI$brks)], sep="-")
+#put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend and font size
+legend("bottomleft", legend=labels, fill=cols, title="% Change in Yield", cex=.5 ,pt.cex=.35)
+
+```
