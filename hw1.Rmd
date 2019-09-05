@@ -129,7 +129,7 @@ avg_soy_landfrac
 
 •	Map: county average corn yield since 1990
 
-```{r Average corn yield by county since 1990}
+```{r , fig.cap = "Mean corn yield (in BU) per county since 1990. Quantiles breaks with 10 classes was used. White counties have no data recorded."}
 
 
 library(maps)
@@ -185,7 +185,7 @@ legend("bottomleft", legend=labels, fill=cols, title="Corn Yield (in BU/acre)", 
 
 • Map: County rate of corn yield increase (slope of trend since 1990) 
 
-```{r Map Percent Change in Corn Yield}
+```{r ,fig.cap = "Percent change in corn yield per county, beginning as early as 1990. Breaks were selected using the "Jenks" interval method, using 9 classes. White counties have no data recorded."}
 #get annual yield by year and county/state from previously generated "corn" data.table
 corn_annualyield_year_county<-corn[,.(annual_yield=sum(double_val)),by=.(YEAR,unique_FIP,STATE_NAME,STATEFP,COUNTYFP,COUNTY_NAME)]
 
