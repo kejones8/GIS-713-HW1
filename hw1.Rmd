@@ -6,18 +6,20 @@ output:
   html_notebook: default
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
 ```{r, include=FALSE}
+#above line used for reporting while knitting document
 
 options(tinytex.verbose = TRUE)
 library(data.table)
 library(sp)
 library(stringr)
 
-NASS<-fread("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\qs.crops_20170829.txt.gz",stringsAsFactors = FALSE)
+#setwd
+setwd("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\")
+
+#read in txt.gz file from working directory
+NASS<-fread("qs.crops_20170829.txt.gz",stringsAsFactors = FALSE)
+#get some info about the file
 summary(NASS)
 names(NASS)
 dim(NASS)
@@ -83,7 +85,7 @@ library(rgdal)
 library(rgeos)
 
 #read in states/counties shapefile
-counties <- readOGR("C:\\Users\\The Brain\\OneDrive - North Carolina State University\\F2019 - Classes\\GIS 713\\HW\\GIS-713-HW1\\GIS-713-HW1\\cb_2015_us_county_20m\\cb_2015_us_county_20m.shp", "cb_2015_us_county_20m", stringsAsFactors=F)
+counties <- readOGR(".\\cb_2015_us_county_20m\\cb_2015_us_county_20m.shp", "cb_2015_us_county_20m", stringsAsFactors=F)
 
 #check class of states
 class(counties)
@@ -92,7 +94,7 @@ summary(counties)
 
 #summary()indicates CRS is lat, long. don't like.
 #don't trust that the "ALAND" field is calculated in meters
-#will set a meter projection for entire US shapefile, mostly for visualization purposes
+#will set a meter projection for entire US shapefile, mostly for visualization purposes later
 lamb_conf_conic<-"+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
 #set CRS,still need to reproject
 proj4string(counties) <- CRS(lamb_conf_conic)
@@ -100,13 +102,13 @@ proj4string(counties) <- CRS(lamb_conf_conic)
 # transform/reproject shapefile, easy for viewing all US and any other calculations
 counties_lcc <- spTransform(counties, CRS(lamb_conf_conic))
 
-#instead of using ALAND field, grab the state.area dataset in R
-#state.area is built in dataset in sq. miles,alphabetical order
+#instead of using ALAND field, OR calculating areas from the shapefile, grab the state.area dataset from R
+#dataset in sq. miles,alphabetical order
 class(state.area)
 #convert state area from square miles to acres
 state_acres<-state.area*640
 
-#assign names as unique identifiers to match with the alphabetical sorting of NASS state names
+#assign state names from NASS (sorted alphabetically) as unique identifiers for areas to match with the alphabetical sorting of state_acres
 NASS_states<-sort(unique(NASS$STATE_NAME))
 #need to remove "","OTHER STATES", "US TOTAL"
 STATE_NAME<-NASS_states[-c(1,39,46)]
@@ -173,9 +175,9 @@ counties_onlylower48_withcorn$color_index <- findInterval(counties_onlylower48_w
 plot(counties_onlylower48_withcorn,col=cols[counties_onlylower48_withcorn$color_index],cex=.01, main="Mean Corn Yield per County since 1990") 
 
 #add labels and a legend
-#round the yield numbers to 2 dcimal places, use a dash to separate in the legend text
+#round the yield numbers to 2 decimal places, use a dash to separate in the legend text
 labels <- paste(round(breaks * 100, 2)[1:(length(breaks) - 1)], round(breaks * 100, 2)[2:length(breaks)], sep="-")
-#put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend and font size
+#put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend box size and font size
 legend("bottomleft", legend=labels, fill=cols, title="Corn Yield (in BU/acre)", cex=.5 ,pt.cex=.45)
 
 
@@ -187,32 +189,40 @@ legend("bottomleft", legend=labels, fill=cols, title="Corn Yield (in BU/acre)", 
 #get annual yield by year and county/state from previously generated "corn" data.table
 corn_annualyield_year_county<-corn[,.(annual_yield=sum(double_val)),by=.(YEAR,unique_FIP,STATE_NAME,STATEFP,COUNTYFP,COUNTY_NAME)]
 
+#query corn for the earliest year for each county
 first_year<-setDT(corn_annualyield_year_county)[, .SD[which.min(YEAR)], by=unique_FIP]
 
+#query corn for the latest year for each county
 last_year<-setDT(corn_annualyield_year_county)[, .SD[which.max(YEAR)], by=unique_FIP]
 
-
+#get the information into one data.table by adding the latest year to the same table as the first year for each county, for easier calculations in the next steps
 setDT(first_year)[ , end_year := last_year$YEAR[match(first_year$unique_FIP , last_year$unique_FIP)] , ]
 
+#along the same lines, also add the annual_yield from the latest year for each county
 setDT(first_year)[ , end_annual_yield := last_year$annual_yield[match(first_year$unique_FIP , last_year$unique_FIP)] , ]
 
+#once all in the same table, create columns to generate slope
 first_year[,run:=as.numeric(end_year)-as.numeric(YEAR)]
 first_year[,rise:=as.numeric(annual_yield)-as.numeric(end_annual_yield)]
 first_year[,slope:=rise/run]
 
+#join the slope computation records with the counties for plotting
 counties_onlylower48_withslope<-geo_join(counties_onlylower48,first_year,by_sp="GEOID",by_df="unique_FIP",how="left")
 
 library(classInt)
+#class intervals provides a few more options for types of breaks, used "jenks", as it was decent at distinguishing spatial variability among classes
 cI <- classIntervals(counties_onlylower48_withslope$slope, n=9, style="jenks",na.rm=T)
-pal <- colorRampPalette(brewer.pal(9, "RdYlGn"))
+#chose red to green, to represent negative to postiive slopes
+pal <- colorRampPalette(brewer.pal(9, "RdYlGn")) 
+#assign the color palette to the colors variable with the appropriate number of colors from the palette (breaks minus 1)
 cols <- pal(length(cI$brks - 1))
+#populates the new color index column with using the cI object, class of "classIntervals"
 counties_onlylower48_withslope$color_index <- findCols(cI) 
+#plot slope, with title
 plot(counties_onlylower48_withslope, col=cols[counties_onlylower48_withslope$color_index],main="Percent Change in Corn Yield per County since 1990")
 
-
-
 #add labels and a legend
-#round the yield numbers to 2 dcimal places, use a dash to separate in the legend text
+#round the yield numbers to 1 decimal places, use a dash to separate in the legend text
 labels <- paste(round(cI$brks, 1)[1:(length(cI$brks) - 1)], round(cI$brks, 1)[2:length(cI$brks)], sep="-")
 #put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend and font size
 legend("bottomleft", legend=labels, fill=cols, title="% Change in Yield", cex=.5 ,pt.cex=.35)
