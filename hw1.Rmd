@@ -26,7 +26,7 @@ dim(NASS)
 
 ```
 
-•	What US county has recorded the highest average corn yield since 1990?
+•	**What US county has recorded the highest average corn yield since 1990?**
 
 ```{r County with highest average corn yield}
 
@@ -45,10 +45,14 @@ corn<-NASS[YEAR>=1990 & COMMODITY_DESC %like% "CORN" & AGG_LEVEL_DESC %like% "CO
 #want yield (VALUE) by county code, broken into unique STATE_FIPS_CODE with VALUE averaged over all the years from 1990 on
 corn_avg_yield_county<-corn[,.(avg_corn=mean(double_val)),by=.(STATE_NAME,COUNTY_NAME,STATE_FIPS_CODE,COUNTY_CODE)][order(-avg_corn)]
 
+#The following table is sorted in descending order on the "avg_corn" field
 corn_avg_yield_county
 ```
+***Benton County in Washington state has the highest average corn yield since 1990, at 225.84 BU.***
 
-•	What is the highest reported annual corn yield? In what county?
+
+
+•	**Question 2: What is the highest reported annual corn yield? In what county?**
 
 ```{r County with the highest reported annual corn yield}
 
@@ -59,8 +63,9 @@ corn_maxavg_year_county<-corn[COUNTY_CODE!=998,.(annual_yield=sum(double_val)),b
 corn_maxavg_year_county
 
 ```
+***The highest annual yield (264.1) occured in California's Sutter County.***
 
-•	What state has the most acres of soy in 2014?
+•**Question 3: What state has the most acres of soy in 2014?**
 
 ```{r State with the most acres of soy in 2014}
 
@@ -71,13 +76,14 @@ soy_acres_planted_allyears<-NASS[YEAR>=1990 & COMMODITY_DESC %like% "SOY" & AGG_
 unique(soy_acres_planted_allyears$SHORT_DESC)
 
 #for the year 2014, use double_val (non-modified VALUE field) to sum soy acres planted by STATE
-state_soy_2014<-soy_acres_planted_allyears[YEAR==2014,.(state_total=sum(double_val)),by=.(STATE_NAME,STATE_FIPS_CODE)][order(-state_total)]
+state_soy_2014<-soy_acres_planted_allyears[YEAR==2014,.(state_total_soy_acres=sum(double_val)),by=.(STATE_NAME,STATE_FIPS_CODE)][order(-state_total_soy_acres)]
 
 state_soy_2014
 
 ```
+***Iowa had the largest soy acreage in 2014, at 9850000 acres.***
 
-•What state has the highest average land fraction used for soy production since 1990? 
+**•Question 4: What state has the highest average land fraction used for soy production since 1990?**
 
 ```{r State with highest average land fraction of soy}
 library(sp)
@@ -126,8 +132,9 @@ avg_soy_landfrac<-soy_state_landfrac[YEAR>=1990,.(avg_soy_landfrac=mean(soy_land
 
 avg_soy_landfrac
 ```
+***Illinios has the highest average land fraction of soy acreage since 1990, at ~27%.***
 
-•	Map: county average corn yield since 1990
+**•	Map 1: County average corn yield since 1990**
 
 ```{r , fig.cap = "Mean corn yield (in BU) per county since 1990. Quantiles breaks with 10 classes was used. White counties have no data recorded."}
 
@@ -174,6 +181,9 @@ counties_onlylower48_withcorn$color_index <- findInterval(counties_onlylower48_w
 #plot data, set the colors, size plot, and title of plot
 plot(counties_onlylower48_withcorn,col=cols[counties_onlylower48_withcorn$color_index],cex=.01, main="Mean Corn Yield per County since 1990") 
 
+par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), mar=c(0, 0, 0, 0), new=TRUE)
+plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n')
+
 #add labels and a legend
 #round the yield numbers to 2 decimal places, use a dash to separate in the legend text
 labels <- paste(round(breaks * 100, 2)[1:(length(breaks) - 1)], round(breaks * 100, 2)[2:length(breaks)], sep="-")
@@ -183,9 +193,9 @@ legend("bottomleft", legend=labels, fill=cols, title="Corn Yield (in BU/acre)", 
 
 ```
 
-• Map: County rate of corn yield increase (slope of trend since 1990) 
+**• Map 2: County rate of corn yield increase (slope of trend since 1990)**
 
-```{r ,fig.cap = "Percent change in corn yield per county, beginning as early as 1990. Breaks were selected using the "Jenks" interval method, using 9 classes. White counties have no data recorded."}
+```{r ,fig.cap = "Percent change in corn yield per county, beginning as early as 1990. Breaks were selected using the Jenks interval method, using 9 classes. White counties have no data recorded."}
 #get annual yield by year and county/state from previously generated "corn" data.table
 corn_annualyield_year_county<-corn[,.(annual_yield=sum(double_val)),by=.(YEAR,unique_FIP,STATE_NAME,STATEFP,COUNTYFP,COUNTY_NAME)]
 
@@ -206,24 +216,37 @@ first_year[,run:=as.numeric(end_year)-as.numeric(YEAR)]
 first_year[,rise:=as.numeric(annual_yield)-as.numeric(end_annual_yield)]
 first_year[,slope:=rise/run]
 
+#####get slope from linear model......########
+
 #join the slope computation records with the counties for plotting
 counties_onlylower48_withslope<-geo_join(counties_onlylower48,first_year,by_sp="GEOID",by_df="unique_FIP",how="left")
 
 library(classInt)
 #class intervals provides a few more options for types of breaks, used "jenks", as it was decent at distinguishing spatial variability among classes
-cI <- classIntervals(counties_onlylower48_withslope$slope, n=9, style="jenks",na.rm=T)
+cI <- classIntervals(counties_onlylower48_withslope$slope, n=10, style="jenks",na.rm=T)
+
+#manually set intervals.....based on slope values.....
+breaks<-c(-100,-75,-50,-25,-15,-10,-5,-0.5,0.5,5,10,15,25,50,75,100)
+pal <- colorRampPalette(brewer.pal(11, "BrBG")) #choose yellow to browns
+cols <- pal(length(breaks - 1)) #colors used are one fewer than breaks
+counties_onlylower48_withslope$color_index <- findInterval(counties_onlylower48_withslope$slope, breaks, all.inside=T) #assign the colors to the index of the data breaks
+
+
+
 #chose red to green, to represent negative to postiive slopes
-pal <- colorRampPalette(brewer.pal(9, "RdYlGn")) 
+pal <- colorRampPalette(brewer.pal(10, "BrBG")) #-- changing this
 #assign the color palette to the colors variable with the appropriate number of colors from the palette (breaks minus 1)
-cols <- pal(length(cI$brks - 1))
+
 #populates the new color index column with using the cI object, class of "classIntervals"
-counties_onlylower48_withslope$color_index <- findCols(cI) 
+counties_onlylower48_withslope$color_index <- findCols(modified_breaks) 
 #plot slope, with title
 plot(counties_onlylower48_withslope, col=cols[counties_onlylower48_withslope$color_index],main="Percent Change in Corn Yield per County since 1990")
 
+par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), mar=c(0, 0, 0, 0), new=TRUE)
+plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n')
 #add labels and a legend
 #round the yield numbers to 1 decimal places, use a dash to separate in the legend text
-labels <- paste(round(cI$brks, 1)[1:(length(cI$brks) - 1)], round(cI$brks, 1)[2:length(cI$brks)], sep="-")
+labels <- paste(round(breaks, 1)[1:(length(breaks) - 1)], round(breaks, 1)[2:length(breaks)], sep="-")
 #put the legend in the bottom left, assign data labels, with corresponding colors, title the legend, assign legend and font size
 legend("bottomleft", legend=labels, fill=cols, title="% Change in Yield", cex=.5 ,pt.cex=.35)
 
